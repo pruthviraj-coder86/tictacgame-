@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101114">
+  <title>PLAYROOM — Tic-Tac-Toe</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101114; --panel: #191a1f; --line: #34353d;
+      --text: #f6f5f1; --muted: #a1a2ac; --lime: #c8ff51; --pink: #ff7b9c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+      background: radial-gradient(ellipse at 50% 0%, #242632, transparent 54%), var(--bg);
+      color: var(--text); font-family: system-ui, sans-serif;
+    }
+    header, footer {
+      width: min(100% - 36px, 760px); margin: auto; display: flex;
+      justify-content: space-between; align-items: center;
+    }
+    header { min-height: 64px; border-bottom: 1px solid #292a31; }
+    .brand { font-weight: 800; letter-spacing: -.7px; }
+    .brand span, .x { color: var(--lime); }
+    .o { color: var(--pink); }
+    .muted, footer { color: var(--muted); }
+    .small { font-size: 11px; }
+    main { width: min(100% - 28px, 440px); margin: auto; padding: 32px 0; }
+    h1 { text-align: center; font-size: clamp(36px, 9vw, 54px); letter-spacing: -.06em; margin: 0; }
+    .intro { text-align: center; color: var(--muted); margin: 10px 0 22px; }
+    .panel { background: #191a1fdd; border: 1px solid var(--line); border-radius: 18px; padding: clamp(14px, 4vw, 22px); }
+    .modes { display: flex; gap: 8px; margin-bottom: 14px; }
+    button, select { font: inherit; }
+    .mode, .action {
+      min-height: 43px; border: 1px solid var(--line); border-radius: 10px;
+      background: #23242b; color: var(--text); padding: 0 13px; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .mode { flex: 1; font-size: 13px; }
+    .mode.active, .action.primary { background: var(--lime); color: #161811; border-color: var(--lime); }
+    .select-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+    select { background: #23242b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+    .status { min-height: 24px; text-align: center; color: var(--muted); font-size: 13px; margin: 10px 0; }
+    .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; aspect-ratio: 1; }
+    .cell { border: 1px solid #3a3b45; border-radius: 13px; background: #22232a; color: var(--text); font-size: clamp(44px, 16vw, 74px); font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .cell:disabled { cursor: default; }
+    .cell.winner { background: #303922; border-color: var(--lime); }
+    .scores { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 13px; font-size: 13px; color: var(--muted); }
+    .scores strong { color: var(--text); }
+    .actions { display: flex; gap: 8px; margin-top: 14px; }
+    .action.primary { flex: 1; font-weight: 700; }
+    .note { min-height: 18px; text-align: center; margin: 11px 0 0; font-size: 11px; color: var(--muted); }
+    footer { border-top: 1px solid #292a31; padding: 17px 0 max(17px, env(safe-area-inset-bottom)); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+    button:focus-visible, select:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+    @media (max-width: 380px) { header, footer { width: calc(100% - 24px); } .small { font-size: 9px; } }
+  </style>
+</head>
+<body>
+  <header><div class="brand">PLAY<span>ROOM</span></div><div class="small muted">● &nbsp;Instant play</div></header>
+  <main>
+    <h1>Tic-Tac-Toe</h1>
+    <p class="intro">Pick a mode and play a round.</p>
+    <section class="panel">
+      <div class="modes">
+        <button class="mode active" id="aiMode">Play vs AI</button>
+        <button class="mode" id="localMode">2 Players</button>
+      </div>
+      <label class="select-row" id="difficultyRow">
+        AI difficulty
+        <select id="difficulty">
+          <option value="hard">Unbeatable</option>
+          <option value="easy">Easy</option>
+        </select>
+      </label>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="board" id="board" aria-label="Tic-Tac-Toe board"></div>
+      <div class="scores" id="scores">Loading your AI stats…</div>
+      <div class="actions">
+        <button class="action primary" id="newGame">New game</button>
+        <button class="action" id="resetLocal">Reset board</button>
+      </div>
+      <p class="note" id="note"></p>
+    </section>
+  </main>
+  <footer><span>PLAYROOM</span><span>Have a good game.</span></footer>
+
+  <script>
+    const boardEl = document.querySelector("#board");
+    const statusEl = document.querySelector("#status");
+    const scoresEl = document.querySelector("#scores");
+    const noteEl = document.querySelector("#note");
+    const difficultyEl = document.querySelector("#difficulty");
+    const difficultyRow = document.querySelector("#difficultyRow");
+    const winningLines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+    let cells, turn, done, mode = "ai", clientId;
+
+    function getClientId() {
+      let id = localStorage.getItem("playroom-client-id");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("playroom-client-id", id);
+      }
+      return id;
+    }
+
+    clientId = getClientId();
+
+    for (let i = 0; i < 9; i++) {
+      const button = document.createElement("button");
+      button.className = "cell";
+      button.type = "button";
+      button.setAttribute("aria-label", `Square ${i + 1}`);
+      button.addEventListener("click", () => play(i));
+      boardEl.append(button);
+    }
+
+    function outcome() {
+      for (const line of winningLines) {
+        const [a,b,c] = line;
+        if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) {
+          return { winner: cells[a], line };
+        }
+      }
+      return cells.every(Boolean) ? { winner: "draw", line: [] } : null;
+    }
+
+    function render() {
+      [...boardEl.children].forEach((button, i) => {
+        button.textContent = cells[i];
+        button.className = "cell" + (cells[i] ? " " + cells[i].toLowerCase() : "");
+        button.disabled = done || Boolean(cells[i]) || (mode === "ai" && turn === "O");
+        if (button.disabled && !cells[i]) button.disabled = done || (mode === "ai" && turn === "O");
+      });
+      if (done) return;
+      statusEl.textContent = mode === "ai"
+        ? (turn === "X" ? "Your turn (X)" : "AI is thinking…")
+        : `Player ${turn === "X" ? "1 (X)" : "2 (O)"}’s turn`;
+    }
+
+    function endRound(result) {
+      done = true;
+      if (result.winner === "draw") {
+        statusEl.textContent = "It’s a draw!";
+        if (mode === "ai") saveResult("draw");
+      } else {
+        const playerWon = mode === "ai" ? result.winner === "X" : true;
+        statusEl.textContent = mode === "ai"
+          ? (playerWon ? "You win!" : "The AI wins!")
+          : `Player ${result.winner === "X" ? "1" : "2"} wins!`;
+        result.line.forEach(i => boardEl.children[i].classList.add("winner"));
+        if (mode === "ai") saveResult(playerWon ? "win" : "loss");
+      }
+      [...boardEl.children].forEach(button => button.disabled = true);
+    }
+
+    async function saveResult(result) {
+      noteEl.textContent = "Saving result…";
+      try {
+        const response = await fetch("/api/results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId, mode: "ai", outcome: result })
+        });
+        if (!response.ok) throw new Error("Save failed");
+        noteEl.textContent = "Result saved to your account on this device.";
+        await loadStats();
+      } catch {
+        noteEl.textContent = "Could not save. Check the server connection and try again.";
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const response = await fetch(`/api/stats/${encodeURIComponent(clientId)}`);
+        if (!response.ok) throw new Error("Stats unavailable");
+        const s = await response.json();
+        scoresEl.innerHTML = `AI record: <strong>${s.wins} wins</strong> · <strong>${s.losses} losses</strong> · <strong>${s.draws} draws</strong> (${s.played} games)`;
+      } catch {
+        scoresEl.textContent = "Stats will appear when the database is connected.";
+      }
+    }
+
+    function play(i) {
+      if (done || cells[i] || (mode === "ai" && turn !== "X")) return;
+      cells[i] = turn;
+      let result = outcome();
+      if (result) return endRound(result);
+      turn = turn === "X" ? "O" : "X";
+      render();
+
+      if (mode === "ai" && turn === "O") {
+        setTimeout(() => {
+          const move = difficultyEl.value === "easy" ? easyMove() : bestMove();
+          cells[move] = "O";
+          const aiResult = outcome();
+          if (aiResult) endRound(aiResult);
+          else { turn = "X"; render(); }
+        }, 280);
+      }
+    }
+
+    function easyMove() {
+      const open = cells.map((v,i) => v ? -1 : i).filter(i => i >= 0);
+      return open[Math.floor(Math.random() * open.length)];
+    }
+
+    function minimax(player, depth) {
+      const result = outcome();
+      if (result) {
+        if (result.winner === "O") return 10 - depth;
+        if (result.winner === "X") return depth - 10;
+        return 0;
+      }
+
+      let best = player === "O" ? -Infinity : Infinity;
+      for (let i = 0; i < 9; i++) {
+        if (cells[i]) continue;
+        cells[i] = player;
+        const score = minimax(player === "O" ? "X" : "O", depth + 1);
+        cells[i] = "";
+        best = player === "O" ? Math.max(best, score) : Math.min(best, score);
+      }
+      return best;
+    }
+
+    function bestMove() {
+      let bestScore = -Infinity, choices = [];
+      for (let i = 0; i < 9; i++) {
+        if (cells[i]) continue;
+        cells[i] = "O";
+        const score = minimax("X", 0);
+        cells[i] = "";
+        if (score > bestScore) { bestScore = score; choices = [i]; }
+        else if (score === bestScore) choices.push(i);
+      }
+      return choices[Math.floor(Math.random() * choices.length)];
+    }
+
+    function newGame() {
+      cells = Array(9).fill("");
+      turn = "X";
+      done = false;
+      noteEl.textContent = "";
+      render();
+    }
+
+    document.querySelector("#aiMode").addEventListener("click", () => {
+      mode = "ai";
+      document.querySelector("#aiMode").classList.add("active");
+      document.querySelector("#localMode").classList.remove("active");
+      difficultyRow.hidden = false;
+      newGame();
+    });
+
+    document.querySelector("#localMode").addEventListener("click", () => {
+      mode = "local";
+      document.querySelector("#localMode").classList.add("active");
+      document.querySelector("#aiMode").classList.remove("active");
+      difficultyRow.hidden = true;
+      newGame();
+    });
+
+    document.querySelector("#newGame").addEventListener("click", newGame);
+    document.querySelector("#resetLocal").addEventListener("click", newGame);
+
+    newGame();
+    loadStats();
+  </script>
+</body>
+</html>
